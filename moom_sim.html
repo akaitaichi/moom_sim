@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>月の満ち欠けと見える時間・方角シミュレーター</title>
+<style>
+  body {
+    text-align: center;
+    font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif;
+    background-color: #1a1a2e;
+    color: #fff;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 24px;
+    margin-bottom: 5px;
+  }
+  .info-panel {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 15px;
+    font-size: 22px;
+    font-weight: bold;
+  }
+  .time-display { color: #4facfe; }
+  .moon-display { color: #f6d365; }
+  
+  canvas {
+    background-color: #0f0f1a;
+    border: 2px solid #444;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+  }
+  
+  .controls {
+    margin-top: 20px;
+  }
+  button {
+    padding: 12px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    margin: 0 8px;
+    cursor: pointer;
+    border-radius: 8px;
+    border: none;
+    background-color: #e94560;
+    color: white;
+    transition: background-color 0.2s;
+  }
+  button:hover { background-color: #d13b53; }
+  button:active { transform: scale(0.98); }
+  
+  .speed-label {
+    font-size: 18px;
+    margin-left: 15px;
+    background: #333;
+    padding: 10px 15px;
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+
+  <h1>月の満ち欠けと見える時間・方角</h1>
+  
+  <div class="info-panel">
+    <div class="time-display" id="timeDisplay">観測者の時刻: 12時00分</div>
+    <div class="moon-display" id="moonPhaseDisplay">月の形: 新月</div>
+  </div>
+
+  <canvas id="simCanvas" width="800" height="550"></canvas>
+
+  <div class="controls">
+    <button onclick="changeSpeed(0.5)">🐢 減速</button>
+    <button onclick="togglePlay()" id="playBtn">⏸️ 停止</button>
+    <button onclick="changeSpeed(2)">🐇 加速</button>
+    <span class="speed-label" id="speedDisplay">速度: 1倍</span>
+  </div>
+
+<script>
+  const canvas = document.getElementById('simCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // シミュレーションの変数
+  let earthAngle = 0; // 地球の自転角度（度）
+  let isPlaying = true;
+  let speedMult = 1;
+  const baseSpeed = 0.4; // 1フレームあたりの基本回転角度
+
+  // サイズ・位置の設定
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const earthRadius = 45;
+  const moonOrbitRadius = 220;
+  const moonRadius = 18;
+  const moonOrbitPeriod = 27.3; // 月の公転周期（日）
+
+  function draw() {
+    // 画面クリア
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 太陽の光（右側から）
+    ctx.fillStyle = "rgba(255, 230, 0, 0.08)";
+    ctx.fillRect(cx, 0, canvas.width / 2, canvas.height);
+    
+    ctx.fillStyle = "#FFD700";
+    ctx.font = "bold 24px sans-serif";
+    ctx.fillText("太", canvas.width - 40, cy - 30);
+    ctx.fillText("陽", canvas.width - 40, cy);
+    ctx.fillText("光", canvas.width - 40, cy + 30);
+    
+    // 太陽光の矢印
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.6)";
+    ctx.lineWidth = 2;
+    for(let i = 80; i < canvas.height; i += 100) {
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 80, i);
+      ctx.lineTo(canvas.width - 160, i);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 160, i);
+      ctx.lineTo(canvas.width - 145, i - 10);
+      ctx.lineTo(canvas.width - 145, i + 10);
+      ctx.fill();
+    }
+
+    // 角度の計算（反時計回りにするためマイナスをかける）
+    let renderAngle = -earthAngle * Math.PI / 180; 
+    let moonAngleDeg = earthAngle / moonOrbitPeriod;
+    let moonRenderAngle = -moonAngleDeg * Math.PI / 180;
+
+    // 月の軌道を描画
+    ctx.beginPath();
+    ctx.arc(cx, cy, moonOrbitRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = "#555";
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // --- 地球を描画 ---
+    // 夜の半球（左側）
+    ctx.beginPath();
+    ctx.arc(cx, cy, earthRadius, Math.PI/2, Math.PI*1.5);
+    ctx.fillStyle = "#001f3f";
+    ctx.fill();
+    // 昼の半球（右側）
+    ctx.beginPath();
+    ctx.arc(cx, cy, earthRadius, -Math.PI/2, Math.PI/2);
+    ctx.fillStyle = "#39CCCC";
+    ctx.fill();
+    // 枠線
+    ctx.beginPath();
+    ctx.arc(cx, cy, earthRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    // --- 月を描画 ---
+    let mx = cx + Math.cos(moonRenderAngle) * moonOrbitRadius;
+    let my = cy + Math.sin(moonRenderAngle) * moonOrbitRadius;
+    
+    // 月の夜側
+    ctx.beginPath();
+    ctx.arc(mx, my, moonRadius, Math.PI/2, Math.PI*1.5);
+    ctx.fillStyle = "#444";
+    ctx.fill();
+    // 月の昼側（太陽の方を向いている右側）
+    ctx.beginPath();
+    ctx.arc(mx, my, moonRadius, -Math.PI/2, Math.PI/2);
+    ctx.fillStyle = "#FFDC00";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(mx, my, moonRadius, 0, Math.PI*2);
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    // --- 観測者と方位を描画 ---
+    let ox = cx + Math.cos(renderAngle) * earthRadius;
+    let oy = cy + Math.sin(renderAngle) * earthRadius;
+    
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(renderAngle); // 観測者の位置に合わせて回転
+    
+    // 地平線（緑色）
+    ctx.beginPath();
+    ctx.moveTo(0, -35);
+    ctx.lineTo(0, 35);
+    ctx.strokeStyle = "#2ECC40";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // 観測者（人型）
+    ctx.fillStyle = "#FF851B";
+    ctx.fillRect(0, -3, 10, 6); // 胴体
+    ctx.beginPath();
+    ctx.arc(14, 0, 5, 0, Math.PI*2); // 頭
+    ctx.fill();
+
+    // 方位の文字（南、東、西）
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("南", 45, 0);     // 頭上（天頂＝南）
+    ctx.fillText("東", 18, -45);   // 自転で進む方向が東
+    ctx.fillText("西", 18, 45);    // 自転の逆が西
+    ctx.restore();
+
+    // --- 月が見えるかどうかの判定と視線の描画 ---
+    // 観測者から月へのベクトル
+    let dx = mx - ox;
+    let dy = my - oy;
+    // 観測者の真上（天頂）のベクトル
+    let zx = Math.cos(renderAngle);
+    let zy = Math.sin(renderAngle);
+    // 内積で地平線より上にあるか判定
+    let dot = dx * zx + dy * zy;
+    
+    if (dot > 0) {
+      // 月が見える場合は黄色い点線を引く（直感的な理解のため）
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(mx, my);
+      ctx.strokeStyle = "rgba(255, 220, 0, 0.6)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // --- 時刻の計算と表示 ---
+    // 右(0度)が12時、上(90度)が18時、左(180度)が0時、下(270度)が6時
+    let hoursDec = (12 + (earthAngle % 360) / 360 * 24) % 24;
+    let hours = Math.floor(hoursDec);
+    let mins = Math.floor((hoursDec - hours) * 60);
+    // 10分単位で丸めて表示をスッキリさせる
+    mins = Math.floor(mins / 10) * 10;
+    document.getElementById('timeDisplay').innerText = 
+      `観測者の時刻: ${hours.toString().padStart(2, '0')}時${mins.toString().padStart(2, '0')}分`;
+
+    // --- 月の形（位相）の計算と表示 ---
+    let phaseAngle = (moonAngleDeg % 360 + 360) % 360; 
+    let phaseStr = "";
+    if (phaseAngle < 22 || phaseAngle >= 337) phaseStr = "新月";
+    else if (phaseAngle < 67) phaseStr = "三日月";
+    else if (phaseAngle < 112) phaseStr = "上弦の月（半月）";
+    else if (phaseAngle < 157) phaseStr = "十三夜";
+    else if (phaseAngle < 202) phaseStr = "満月";
+    else if (phaseAngle < 247) phaseStr = "更待月など";
+    else if (phaseAngle < 292) phaseStr = "下弦の月（半月）";
+    else phaseStr = "三十日月など";
+
+    document.getElementById('moonPhaseDisplay').innerText = `月の形: ${phaseStr}`;
+
+    // アニメーションを進行させる
+    if (isPlaying) {
+      earthAngle += baseSpeed * speedMult;
+    }
+    requestAnimationFrame(draw);
+  }
+
+  // ボタンの制御関数
+  function togglePlay() {
+    isPlaying = !isPlaying;
+    document.getElementById('playBtn').innerText = isPlaying ? "⏸️ 停止" : "▶️ 再生";
+  }
+
+  function changeSpeed(factor) {
+    speedMult *= factor;
+    // 極端に速すぎ・遅すぎにならないよう制限
+    if (speedMult > 16) speedMult = 16;
+    if (speedMult < 0.125) speedMult = 0.125;
+    
+    // 表示用のテキスト整形
+    let speedText = speedMult >= 1 ? speedMult : `1/${Math.round(1/speedMult)}`;
+    document.getElementById('speedDisplay').innerText = `速度: ${speedText}倍`;
+  }
+
+  // 最初の描画を開始
+  draw();
+</script>
+</body>
+</html>
